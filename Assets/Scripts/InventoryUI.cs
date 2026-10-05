@@ -1,21 +1,15 @@
-using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
+using TMPro;
 
 public class InventoryUI : MonoBehaviour
 {
     public Inventory inventory;
     public TMP_Text inventoryText;
 
-    public bool IsOpen { get; private set; }
-
     void Start()
     {
-        IsOpen = false;
+        // Inventory starts closed
         gameObject.SetActive(false);
-
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
     }
 
     void Update()
@@ -28,33 +22,19 @@ public class InventoryUI : MonoBehaviour
 
     void ToggleInventory()
     {
-        IsOpen = !IsOpen;
+        bool open = !gameObject.activeSelf;
 
-        gameObject.SetActive(IsOpen);
+        gameObject.SetActive(open);
 
-        if (IsOpen)
+        if (open)
         {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-
-            UpdateInventoryText();
-        }
-        else
-        {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            UpdateInventory();
         }
     }
 
-    void UpdateInventoryText()
+    void UpdateInventory()
     {
+        
         inventoryText.text = "INVENTORY\n\n";
-
-        Dictionary<string, int> items = inventory.GetItems();
-
-        foreach (var item in items)
-        {
-            inventoryText.text += item.Key + " x" + item.Value + "\n";
-        }
     }
 }
