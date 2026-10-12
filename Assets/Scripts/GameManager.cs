@@ -2,44 +2,68 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using TMPro;
+using UnityEngine.UI;
 
 public enum GameState
 {
     beforeStart,
     gamePlay,
-    gameOver
+    gameOver,
+    gameWon
 }
 
-/// <summary>
-/// Central game manager for score, game states,
-/// stealable items, and falling item generation.
-/// Only one instance should exist in the scene.
-/// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager instance;
 
-    [Header("Coin / Stealable Item References")]
+    [Header("Water Timer Bar")]
+    public Image waterFill;
+
+    [Header("Prefab References")]
     public GameObject coinPrefab;
     public Transform coinParent;
-    public TMP_Text scoreText;
 
-    [Header("Falling Item References")]
-    public GameObject fallingItemPrefab;
-    public Transform fallingItemParent;
+    public GameObject skullPrefab;
+    public Transform skullParent;
+
+    [Header("UI References")]
+    public TMP_Text scoreText;
+    public TMP_Text resultText;
+
+    [Header("Game Menu UI")]
+    public GameObject startPanel;
+    public GameObject winPanel;
+    public GameObject gameOverPanel;
+
+    [Header("Strike UI")]
+    public Image[] strikeImages;
+    public Color inactiveStrikeColor = Color.gray;
+    public Color activeStrikeColor = Color.red;
+
+    [Header("Spawn Settings")]
+    public float coinSpawnRate = 2f;
+    public float skullSpawnRate = 1.5f;
+
+    [Range(0f, 0.4f)]
+    public float horizontalSpawnMargin = 0.05f;
+
+    [Range(1f, 2f)]
+    public float spawnHeight = 1.15f;
+
+    [Header("Game Rules")]
+    public float gameDuration = 30f;
+    public int maxMissedSkulls = 5;
 
     [Header("Game State")]
     public GameState gameState = GameState.beforeStart;
     public int score = 10;
-    public int level = 0;
+    public int missedSkulls = 0;
 
-    [Header("Falling Item Settings")]
-    public bool generateCoins = true;
-    public bool generateFallingItems = false;
+    private float timeRemaining;
+    private Camera mainCamera;
 
     void Awake()
     {
-        // Singleton: allow only one GameManager.
         if (instance != null && instance != this)
         {
             Destroy(gameObject);
@@ -47,20 +71,24 @@ public class GameManager : MonoBehaviour
         }
 
         instance = this;
-
-        // Keep this manager when changing scenes, if desired.
-        // Remove this line if each scene should have its own manager.
-        DontDestroyOnLoad(gameObject);
-
-        Config.coinsToGenerate = 1;
+        mainCamera = Camera.main;
 
         score = 10;
-        level = 0;
+        missedSkulls = 0;
+        timeRemaining = gameDuration;
         gameState = GameState.beforeStart;
 
-        UpdateScoreText();
+        if (waterFill != null)
+            waterFill.fillAmount = 0f;
 
-        Debug.Log("Gatavs? Spied F, lai sāktu!");
+        UpdateScoreText();
+        UpdateStrikeUI();
+
+        if (resultText != null)
+            resultText.text = "";
+
+        // Show the start screen when the scene loads.
+        ShowPanel(startPanel);
     }
 
     void Update()
@@ -69,94 +97,170 @@ public class GameManager : MonoBehaviour
         {
             case GameState.beforeStart:
                 if (Input.GetKeyDown(KeyCode.F))
-                {
                     StartGame();
-                }
                 break;
 
             case GameState.gamePlay:
-                // Add timer or difficulty progression here.
+                UpdateTimer();
                 break;
 
             case GameState.gameOver:
+            case GameState.gameWon:
                 if (Input.GetKeyDown(KeyCode.F))
-                {
                     RestartGame();
-                }
                 break;
         }
+    }
+
+    // Shows one menu panel and hides the others.
+    void ShowPanel(GameObject panelToShow)
+    {
+        if (startPanel != null)
+            startPanel.SetActive(panelToShow == startPanel);
+
+        if (winPanel != null)
+            winPanel.SetActive(panelToShow == winPanel);
+
+        if (gameOverPanel != null)
+            gameOverPanel.SetActive(panelToShow == gameOverPanel);
     }
 
     public void StartGame()
     {
-        if (gameState == GameState.gamePlay)
+        if (gameState != GameState.beforeStart)
             return;
+
+        if (mainCamera == null)
+            mainCamera = Camera.main;
+
+        if (mainCamera == null)
+        {
+            Debug.LogError("Main Camera not found!");
+            return;
+        }
+
+        timeRemaining = gameDuration;
+
+        if (waterFill != null)
+            waterFill.fillAmount = 0f;
 
         gameState = GameState.gamePlay;
 
-        CancelInvoke(nameof(GenerateItems));
+        // Hide the start screen during gameplay.
+        ShowPanel(null);
+
+        if (resultText != null)
+            resultText.text = "";
 
         InvokeRepeating(
-            nameof(GenerateItems),
+            nameof(SpawnCoin),
             0f,
-            Config.repeatRate
+            Mathf.Max(0.1f, coinSpawnRate)
         );
 
-        Debug.Log("Spēle sākusies!");
+        InvokeRepeating(
+            nameof(SpawnSkull),
+            0f,
+            Mathf.Max(0.1f, skullSpawnRate)
+        );
     }
 
-    void GenerateItems()
+    Vector3 GetTopSpawnPosition()
+    {
+        float x = Random.Range(
+            horizontalSpawnMargin,
+            1f - horizontalSpawnMargin
+        );
+
+        Vector3 viewportPosition = new Vector3(
+            x,
+            spawnHeight,
+            -mainCamera.transform.position.z
+        );
+
+        Vector3 position =
+            mainCamera.ViewportToWorldPoint(viewportPosition);
+
+        position.z = 0f;
+        return position;
+    }
+
+    void SpawnCoin()
+    {
+        if (gameState != GameState.gamePlay || coinPrefab == null)
+            return;
+
+        Instantiate(
+            coinPrefab,
+            GetTopSpawnPosition(),
+            Quaternion.identity,
+            coinParent
+        );
+    }
+
+    void SpawnSkull()
+    {
+        if (gameState != GameState.gamePlay || skullPrefab == null)
+            return;
+
+        Instantiate(
+            skullPrefab,
+            GetTopSpawnPosition(),
+            Quaternion.identity,
+            skullParent
+        );
+    }
+
+    void UpdateTimer()
+    {
+        timeRemaining -= Time.deltaTime;
+        timeRemaining = Mathf.Max(0f, timeRemaining);
+
+        // Fill the water bar over the duration of the game.
+        float progress = gameDuration > 0f
+            ? 1f - (timeRemaining / gameDuration)
+            : 1f;
+
+        if (waterFill != null)
+            waterFill.fillAmount = progress;
+
+        if (timeRemaining <= 0f)
+            WinGame();
+    }
+
+    public void SkullPassed()
     {
         if (gameState != GameState.gamePlay)
             return;
 
-        // Generate stealable coins/items.
-        if (generateCoins && coinPrefab != null)
-        {
-            for (int i = 0; i < Config.coinsToGenerate; i++)
-            {
-                SpawnItem(coinPrefab, coinParent);
-            }
-        }
+        missedSkulls++;
 
-        // Generate a separate type of falling item.
-        if (generateFallingItems && fallingItemPrefab != null)
-        {
-            SpawnItem(fallingItemPrefab, fallingItemParent);
-        }
+        // Activate the next strike indicator.
+        UpdateStrikeUI();
 
-        level++;
+        Debug.Log(
+            "Missed skulls: " + missedSkulls +
+            " / " + maxMissedSkulls
+        );
 
-        // Increase the number of coins each wave.
-        if (generateCoins)
-        {
-            Config.coinsToGenerate++;
-        }
+        if (missedSkulls >= maxMissedSkulls)
+            LoseGame();
     }
 
-    void SpawnItem(GameObject prefab, Transform parent)
+    void UpdateStrikeUI()
     {
-        Vector3 spawnPosition = new Vector3(
-            Random.Range(Config.minDropX, Config.maxDropX),
-            0f,
-            0f
-        );
+        if (strikeImages == null)
+            return;
 
-        GameObject item = Instantiate(
-            prefab,
-            spawnPosition,
-            Quaternion.identity,
-            parent
-        );
-
-        Rigidbody2D rb = item.GetComponent<Rigidbody2D>();
-
-        if (rb != null)
+        for (int i = 0; i < strikeImages.Length; i++)
         {
-            rb.AddForce(
-                Random.insideUnitCircle * Config.dropForce,
-                ForceMode2D.Impulse
-            );
+            if (strikeImages[i] == null)
+                continue;
+
+            strikeImages[i].color =
+                i < missedSkulls
+                    ? activeStrikeColor
+                    : inactiveStrikeColor;
         }
     }
 
@@ -169,55 +273,64 @@ public class GameManager : MonoBehaviour
         UpdateScoreText();
     }
 
-    public void RemoveScore()
+    void UpdateScoreText()
+    {
+        if (scoreText != null)
+            scoreText.text = "Score: " + score;
+    }
+
+    void WinGame()
     {
         if (gameState != GameState.gamePlay)
             return;
 
-        score--;
-        UpdateScoreText();
+        StopSpawning();
+        gameState = GameState.gameWon;
 
-        if (score <= 0)
-        {
-            GameOver();
-        }
+        // Show the victory screen.
+        ShowPanel(winPanel);
+
+        if (resultText != null)
+            resultText.text = "";
+
+        Debug.Log("You survived the timer! You win!");
     }
 
-    void UpdateScoreText()
+    void LoseGame()
     {
-        if (scoreText != null)
-        {
-            scoreText.text = score.ToString();
-        }
-    }
-
-    public void GameOver()
-    {
-        if (gameState == GameState.gameOver)
+        if (gameState != GameState.gamePlay)
             return;
 
-        CancelInvoke(nameof(GenerateItems));
-
+        StopSpawning();
         gameState = GameState.gameOver;
 
-        Debug.Log(
-            "Spēle beigusies! Tu izturēji līdz " +
-            level +
-            ". līmenim. Spied F, lai sāktu no jauna."
-        );
+        // Show the game-over screen.
+        ShowPanel(gameOverPanel);
+
+        if (resultText != null)
+            resultText.text = "";
+
+        Debug.Log("Too many skulls passed through. You lose!");
+    }
+
+    void StopSpawning()
+    {
+        CancelInvoke(nameof(SpawnCoin));
+        CancelInvoke(nameof(SpawnSkull));
     }
 
     public void RestartGame()
     {
-        CancelInvoke(nameof(GenerateItems));
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        StopSpawning();
+
+        SceneManager.LoadScene(
+            SceneManager.GetActiveScene().buildIndex
+        );
     }
 
     void OnDestroy()
     {
         if (instance == this)
-        {
             instance = null;
-        }
     }
 }

@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 1649430452747558060}
   - component: {fileID: 8520060850743913444}
   - component: {fileID: 1645521750445330299}
+  - component: {fileID: -7762408565139254084}
   m_Layer: 0
   m_Name: light outline skulls1
   m_TagString: Untagged
@@ -157,3 +158,15 @@ CapsuleCollider2D:
   m_Offset: {x: 0, y: 0}
   m_Size: {x: 0.15, y: 0.16}
   m_Direction: 0
+--- !u!114 &-7762408565139254084
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 558024031540081837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c42546b64c622954abe29330cd4b5fcb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Skull
