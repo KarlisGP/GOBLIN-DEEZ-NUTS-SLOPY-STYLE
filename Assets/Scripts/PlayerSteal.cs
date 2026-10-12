@@ -2,9 +2,13 @@ using UnityEngine;
 
 public class PlayerSteal : MonoBehaviour
 {
+    [Header("References")]
     public Camera playerCamera;
     public Inventory inventory;
+    public InventoryUI inventoryUI;
+    public UIManager uiManager;
 
+    [Header("Stealing")]
     public float stealDistance = 3f;
 
     void Update()
@@ -17,21 +21,60 @@ public class PlayerSteal : MonoBehaviour
 
     void TrySteal()
     {
-        Ray ray = playerCamera.ScreenPointToRay(
-            new Vector3(Screen.width / 2f, Screen.height / 2f)
+        if (playerCamera == null)
+        {
+            Debug.LogError("PlayerSteal: Player Camera is not assigned!");
+            return;
+        }
+
+        if (inventory == null)
+        {
+            Debug.LogError("PlayerSteal: Inventory is not assigned!");
+            return;
+        }
+
+        Ray ray = playerCamera.ViewportPointToRay(
+            new Vector3(0.5f, 0.5f, 0f)
         );
 
         if (Physics.Raycast(ray, out RaycastHit hit, stealDistance))
         {
-            Stealable stealable = hit.collider.GetComponentInParent<Stealable>();
+            Debug.Log("Ray hit: " + hit.collider.gameObject.name);
 
-            if (stealable != null)
+            Stealable item = hit.collider.GetComponentInParent<Stealable>();
+
+            if (item != null)
             {
-                if (stealable.TrySteal(out string itemName, out int amount))
+                string itemName = item.itemName;
+                int amount = item.amount;
+
+                // Add item to inventory
+                item.Steal(inventory);
+
+                // Update inventory UI
+                if (inventoryUI != null)
                 {
-                    inventory.AddItem(itemName, amount);
+                    inventoryUI.RefreshInventory();
                 }
+
+                // Show popup
+                if (uiManager != null)
+                {
+                    uiManager.ShowPopup(
+                        "Stole " + itemName + " x" + amount
+                    );
+                }
+
+                Debug.Log("Successfully stole " + itemName + " x" + amount);
             }
+            else
+            {
+                Debug.Log("Object is not stealable.");
+            }
+        }
+        else
+        {
+            Debug.Log("Ray did not hit anything.");
         }
     }
 }

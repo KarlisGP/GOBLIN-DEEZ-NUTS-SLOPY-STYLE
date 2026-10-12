@@ -16,7 +16,7 @@ public class Inventory : MonoBehaviour
             items.Add(itemName, amount);
         }
 
-        Debug.Log("Stole: " + itemName + " x" + amount);
+        Debug.Log("Added " + itemName + " x" + amount);
     }
 
     public Dictionary<string, int> GetItems()
