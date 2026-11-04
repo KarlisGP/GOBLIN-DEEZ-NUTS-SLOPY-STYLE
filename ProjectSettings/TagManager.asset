@@ -8,6 +8,7 @@ TagManager:
   - Ground
   - Item
   - Lava
+  - NPC
   layers:
   - Default
   - TransparentFX
