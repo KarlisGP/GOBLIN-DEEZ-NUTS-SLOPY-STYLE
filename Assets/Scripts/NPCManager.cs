@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -15,6 +16,8 @@ public class NPCManager : MonoBehaviour
     [Tooltip("Max NPCs ticked per frame. Higher = more responsive, lower = cheaper.")]
     [SerializeField] int ticksPerFrame = 50;
     [SerializeField] int maxNPCs = 200;
+    [Tooltip("Seconds a dead NPC stays in the scene (lets the death animation play).")]
+    [SerializeField] float deathDespawnDelay = 3f;
 
     readonly List<NPC> active = new List<NPC>();
     readonly List<NPC> pendingDespawn = new List<NPC>();
@@ -97,7 +100,7 @@ public class NPCManager : MonoBehaviour
     /// <summary>Safe to call from anywhere (even mid-tick); removal is deferred to end of frame.</summary>
     public void Despawn(NPC npc)
     {
-        if (npc != null && !pendingDespawn.Contains(npc))
+        if (npc != null && active.Contains(npc) && !pendingDespawn.Contains(npc))
             pendingDespawn.Add(npc);
     }
 
@@ -106,7 +109,14 @@ public class NPCManager : MonoBehaviour
         foreach (var npc in active) Despawn(npc);
     }
 
-    void OnNPCDied(NPC npc) => Despawn(npc); // swap for a corpse/ragdoll delay if you want
+    void OnNPCDied(NPC npc) => StartCoroutine(DespawnAfterDelay(npc));
+
+    IEnumerator DespawnAfterDelay(NPC npc)
+    {
+        if (deathDespawnDelay > 0f) yield return new WaitForSeconds(deathDespawnDelay);
+        // Skip if it was already despawned and reused while we waited.
+        if (npc != null && !npc.IsAlive) Despawn(npc);
+    }
 
     void FlushDespawns()
     {
