@@ -1,14 +1,12 @@
 using System;
 using UnityEngine;
-using UnityEngine.AI;
 
 public enum NPCState { Idle, Wander, Follow, Dead }
 
 /// <summary>
-/// Individual NPC. It has no Update(): NPCManager calls Tick() so updates
-/// can be centralised and staggered across frames.
+/// Individual NPC, moved directly by code (no NavMesh).
+/// It has no Update(): NPCManager calls Move() every frame and Tick() staggered.
 /// </summary>
-[RequireComponent(typeof(NavMeshAgent))]
 public class NPC : MonoBehaviour
 {
     public NPCData Data { get; private set; }
@@ -16,33 +14,66 @@ public class NPC : MonoBehaviour
     public float Health { get; private set; }
     public bool IsAlive => State != NPCState.Dead;
     public Transform FollowTarget { get; private set; }
+    public Vector3 Home { get; private set; }
+    /// <summary>Current movement speed in units/second (for animation).</summary>
+    public float CurrentSpeed { get; private set; }
 
-    /// <summary>Used by the manager for staggered ticking.</summary>
     [NonSerialized] public float LastTickTime;
 
     public event Action<NPC, NPCState, NPCState> StateChanged;
     public event Action<NPC> Died;
 
-    NavMeshAgent agent;
+    Vector3 destination;
+    bool hasDestination;
     float idleTimer;
-
-    void Awake() => agent = GetComponent<NavMeshAgent>();
 
     public void Initialize(NPCData data)
     {
         Data = data;
         Health = data.maxHealth;
-        agent.speed = data.moveSpeed;
-        agent.enabled = true;
+        Home = transform.position;
         FollowTarget = null;
-        SetState(NPCState.Idle);
+        hasDestination = false;
+        CurrentSpeed = 0f;
+        idleTimer = UnityEngine.Random.Range(data.idleTimeRange.x, data.idleTimeRange.y);
+
+        var prev = State;
+        State = NPCState.Idle;
+        if (prev != NPCState.Idle) StateChanged?.Invoke(this, prev, State);
     }
 
     // ---------- Commands ----------
-    public void Idle() { FollowTarget = null; agent.ResetPath(); SetState(NPCState.Idle); }
-    public void Wander() { FollowTarget = null; SetState(NPCState.Wander); PickWanderPoint(); }
-    public void Follow(Transform target) { FollowTarget = target; SetState(NPCState.Follow); }
-    public void MoveTo(Vector3 pos) { FollowTarget = null; SetState(NPCState.Wander); agent.SetDestination(pos); }
+    public void Idle() { FollowTarget = null; hasDestination = false; SetState(NPCState.Idle); }
+
+    public void Follow(Transform target)
+    {
+        FollowTarget = target;
+        SetState(NPCState.Follow);
+    }
+
+    public void MoveTo(Vector3 position)
+    {
+        FollowTarget = null;
+        destination = position;
+        hasDestination = true;
+        SetState(NPCState.Wander);
+    }
+
+    public void Wander()
+    {
+        FollowTarget = null;
+        SetState(NPCState.Wander);
+
+        Vector2 c = UnityEngine.Random.insideUnitCircle * Data.wanderRadius;
+        Vector3 point = Home + new Vector3(c.x, 0f, c.y);
+
+        if (Data.groundLayers.value != 0)
+        {
+            if (!TryGetGround(point, Data.groundLayers, out point)) { SetState(NPCState.Idle); return; }
+        }
+        destination = point;
+        hasDestination = true;
+    }
 
     public void TakeDamage(float amount)
     {
@@ -54,12 +85,57 @@ public class NPC : MonoBehaviour
     public void Die()
     {
         if (!IsAlive) return;
-        agent.ResetPath();
+        hasDestination = false;
+        CurrentSpeed = 0f;
         SetState(NPCState.Dead);
         Died?.Invoke(this);
     }
 
-    // ---------- Called by NPCManager ----------
+    // ---------- Called by NPCManager every frame ----------
+    public void Move(float dt)
+    {
+        if (!IsAlive || dt <= 0f) return;
+
+        if (State == NPCState.Follow && FollowTarget != null)
+        {
+            destination = FollowTarget.position;
+            hasDestination = true;
+        }
+
+        if (!hasDestination) { CurrentSpeed = 0f; return; }
+
+        Vector3 pos = transform.position;
+        Vector3 to = destination - pos;
+        to.y = 0f;
+        float dist = to.magnitude;
+        float stop = State == NPCState.Follow ? Data.followDistance : Data.stoppingDistance;
+
+        if (dist <= stop) { Arrive(); return; }
+
+        Vector3 dir = to / dist;
+
+        if (Data.obstacleLayers.value != 0 &&
+            Physics.Raycast(pos + Vector3.up * 0.5f, dir, Data.obstacleCheckDistance,
+                            Data.obstacleLayers, QueryTriggerInteraction.Ignore))
+        {
+            Arrive(); // blocked: stop here
+            return;
+        }
+
+        float step = Mathf.Min(Data.moveSpeed * dt, dist);
+        pos += dir * step;
+
+        if (Data.groundLayers.value != 0 && TryGetGround(pos, Data.groundLayers, out var ground))
+            pos.y = ground.y;
+
+        transform.position = pos;
+        transform.rotation = Quaternion.RotateTowards(
+            transform.rotation, Quaternion.LookRotation(dir, Vector3.up), Data.turnSpeed * dt);
+
+        CurrentSpeed = step / dt;
+    }
+
+    // ---------- Called by NPCManager, staggered across frames ----------
     public void Tick(float dt)
     {
         switch (State)
@@ -70,26 +146,28 @@ public class NPC : MonoBehaviour
                 break;
 
             case NPCState.Wander:
-                if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.2f)
-                {
-                    idleTimer = UnityEngine.Random.Range(Data.idleTimeRange.x, Data.idleTimeRange.y);
-                    SetState(NPCState.Idle);
-                }
+                if (!hasDestination) SetState(NPCState.Idle);
                 break;
 
             case NPCState.Follow:
-                if (FollowTarget == null) { Idle(); break; }
-                agent.SetDestination(FollowTarget.position);
+                if (FollowTarget == null) Idle();
                 break;
         }
     }
 
     // ---------- Helpers ----------
-    void PickWanderPoint()
+    void Arrive() { hasDestination = false; CurrentSpeed = 0f; }
+
+    public static bool TryGetGround(Vector3 point, LayerMask mask, out Vector3 ground)
     {
-        Vector3 random = transform.position + UnityEngine.Random.insideUnitSphere * Data.wanderRadius;
-        if (NavMesh.SamplePosition(random, out var hit, Data.wanderRadius, NavMesh.AllAreas))
-            agent.SetDestination(hit.position);
+        if (Physics.Raycast(point + Vector3.up * 3f, Vector3.down, out var hit, 10f,
+                            mask, QueryTriggerInteraction.Ignore))
+        {
+            ground = hit.point;
+            return true;
+        }
+        ground = point;
+        return false;
     }
 
     void SetState(NPCState next)
@@ -97,7 +175,7 @@ public class NPC : MonoBehaviour
         if (State == next) return;
         var prev = State;
         State = next;
-        if (next == NPCState.Idle && prev != NPCState.Idle)
+        if (next == NPCState.Idle)
             idleTimer = UnityEngine.Random.Range(Data.idleTimeRange.x, Data.idleTimeRange.y);
         StateChanged?.Invoke(this, prev, next);
     }

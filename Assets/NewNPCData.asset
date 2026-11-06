@@ -13,9 +13,19 @@ MonoBehaviour:
   m_Name: NewNPCData
   m_EditorClassIdentifier: Assembly-CSharp::NPCData
   displayName: NPC
-  prefab: {fileID: 0}
+  prefab: {fileID: 8938294536415751852, guid: 4bdfe667964e7fe4993f25b418abe016, type: 3}
   faction: Neutral
   maxHealth: 100
-  moveSpeed: 3.5
-  wanderRadius: 10
+  moveSpeed: 30
+  turnSpeed: 360
+  stoppingDistance: 0.2
+  followDistance: 10
+  wanderRadius: 100
   idleTimeRange: {x: 2, y: 5}
+  groundLayers:
+    serializedVersion: 2
+    m_Bits: 8
+  obstacleLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  obstacleCheckDistance: 0.6

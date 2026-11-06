@@ -2,10 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AI;
 
 /// <summary>
-/// Central NPC manager: spawning, pooling, staggered ticking, and queries.
+/// Central NPC manager: spawning, pooling, movement, staggered thinking, and queries.
 /// Add to one GameObject in your scene.
 /// </summary>
 public class NPCManager : MonoBehaviour
@@ -13,7 +12,7 @@ public class NPCManager : MonoBehaviour
     public static NPCManager Instance { get; private set; }
 
     [Header("Settings")]
-    [Tooltip("Max NPCs ticked per frame. Higher = more responsive, lower = cheaper.")]
+    [Tooltip("Max NPCs 'thinking' per frame. Movement still runs every frame.")]
     [SerializeField] int ticksPerFrame = 50;
     [SerializeField] int maxNPCs = 200;
     [Tooltip("Seconds a dead NPC stays in the scene (lets the death animation play).")]
@@ -40,11 +39,15 @@ public class NPCManager : MonoBehaviour
 
     void Update()
     {
-        TickNPCs();
+        float dt = Time.deltaTime;
+        for (int i = 0; i < active.Count; i++)
+            active[i].Move(dt);          // smooth movement every frame
+
+        TickNPCs();                      // decisions, staggered
         FlushDespawns();
     }
 
-    // ---------- Ticking (round-robin so cost is bounded) ----------
+    // ---------- Thinking (round-robin so cost is bounded) ----------
     void TickNPCs()
     {
         int n = active.Count;
@@ -78,15 +81,12 @@ public class NPCManager : MonoBehaviour
             return null;
         }
 
-        NPC npc = GetFromPool(data);
-        if (NavMesh.SamplePosition(position, out var hit, 5f, NavMesh.AllAreas))
-            position = hit.position;
+        if (data.groundLayers.value != 0 && NPC.TryGetGround(position, data.groundLayers, out var ground))
+            position = ground;
 
+        NPC npc = GetFromPool(data);
         npc.transform.SetPositionAndRotation(position, rotation ?? Quaternion.identity);
         npc.gameObject.SetActive(true);
-
-        var agent = npc.GetComponent<NavMeshAgent>();
-        agent.Warp(position);
 
         npc.Initialize(data);
         npc.LastTickTime = Time.time;
@@ -97,7 +97,7 @@ public class NPCManager : MonoBehaviour
         return npc;
     }
 
-    /// <summary>Safe to call from anywhere (even mid-tick); removal is deferred to end of frame.</summary>
+    /// <summary>Safe to call from anywhere; removal is deferred to end of frame.</summary>
     public void Despawn(NPC npc)
     {
         if (npc != null && active.Contains(npc) && !pendingDespawn.Contains(npc))

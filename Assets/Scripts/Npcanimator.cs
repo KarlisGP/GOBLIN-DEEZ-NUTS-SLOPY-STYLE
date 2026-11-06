@@ -1,12 +1,11 @@
 using UnityEngine;
-using UnityEngine.AI;
 
 /// <summary>
-/// Drives the villager's Animator from the NavMeshAgent's speed and the NPC's state.
+/// Drives the villager's Animator from the NPC's movement speed and state.
 /// Put on the same root object as NPC. Animator controller needs:
 ///   float "Speed"  and  trigger "Die"  (names configurable below).
 /// </summary>
-[RequireComponent(typeof(NavMeshAgent), typeof(NPC))]
+[RequireComponent(typeof(NPC))]
 public class NPCAnimator : MonoBehaviour
 {
     [Tooltip("Leave empty to auto-find the Animator on the model child.")]
@@ -15,13 +14,11 @@ public class NPCAnimator : MonoBehaviour
     [SerializeField] string dieTrigger = "Die";
     [SerializeField] float dampTime = 0.1f;
 
-    NavMeshAgent agent;
     NPC npc;
     int speedHash, dieHash;
 
     void Awake()
     {
-        agent = GetComponent<NavMeshAgent>();
         npc = GetComponent<NPC>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
         speedHash = Animator.StringToHash(speedParam);
@@ -34,7 +31,7 @@ public class NPCAnimator : MonoBehaviour
     void Update()
     {
         if (animator == null || !npc.IsAlive) return;
-        animator.SetFloat(speedHash, agent.velocity.magnitude, dampTime, Time.deltaTime);
+        animator.SetFloat(speedHash, npc.CurrentSpeed, dampTime, Time.deltaTime);
     }
 
     void OnStateChanged(NPC _, NPCState prev, NPCState next)
